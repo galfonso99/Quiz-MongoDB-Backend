@@ -1,16 +1,16 @@
-use crate::{error::Error::*, handler::BookRequest, Book, Result};
+use crate::{error::Error::*, handler::QuizRequest, Question, Quiz, Result};
 use chrono::prelude::*;
 use futures::StreamExt;
-use mongodb::bson::{doc, document::Document, oid::ObjectId, Bson};
+pub use mongodb::bson::{doc, document::Document, oid::ObjectId, Bson};
 use mongodb::{options::ClientOptions, Client, Collection};
 
-const DB_NAME: &str = "booky";
-const COLL: &str = "books";
+const DB_NAME: &str = "quizzbuzz";
+const COLL: &str = "quizzes";
 
 const ID: &str = "_id";
-const NAME: &str = "name";
+const TITLE: &str = "title";
 const AUTHOR: &str = "author";
-const NUM_PAGES: &str = "num_pages";
+const QUESTIONS: &str = "questions";
 const ADDED_AT: &str = "added_at";
 const TAGS: &str = "tags";
 
@@ -22,32 +22,32 @@ pub struct DB {
 impl DB {
     pub async fn init() -> Result<Self> {
         let mut client_options = ClientOptions::parse("mongodb://127.0.0.1:27017").await?;
-        client_options.app_name = Some("booky".to_string());
+        client_options.app_name = Some("quizzbuzz".to_string());
 
         Ok(Self {
             client: Client::with_options(client_options)?,
         })
     }
 
-    pub async fn fetch_books(&self) -> Result<Vec<Book>> {
+    pub async fn fetch_quizzes(&self) -> Result<Vec<Quiz>> {
         let mut cursor = self
             .get_collection()
             .find(None, None)
             .await
             .map_err(MongoQueryError)?;
 
-        let mut result: Vec<Book> = Vec::new();
+        let mut result: Vec<Quiz> = Vec::new();
         while let Some(doc) = cursor.next().await {
-            result.push(self.doc_to_book(&doc?)?);
+            result.push(self.doc_to_quiz(&doc?)?);
         }
         Ok(result)
     }
 
-    pub async fn create_book(&self, entry: &BookRequest) -> Result<()> {
+    pub async fn create_quiz(&self, entry: &QuizRequest) -> Result<()> {
         let doc = doc! {
-            NAME: entry.name.clone(),
+            TITLE: entry.title.clone(),
             AUTHOR: entry.author.clone(),
-            NUM_PAGES: entry.num_pages as i32,
+            QUESTIONS: entry.questions.clone(),
             ADDED_AT: Utc::now(),
             TAGS: entry.tags.clone(),
         };
@@ -59,15 +59,14 @@ impl DB {
         Ok(())
     }
 
-    pub async fn edit_book(&self, id: &str, entry: &BookRequest) -> Result<()> {
+    pub async fn edit_quiz(&self, id: &str, entry: &QuizRequest) -> Result<()> {
         let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
         let query = doc! {
             "_id": oid,
         };
         let doc = doc! {
-            NAME: entry.name.clone(),
+            TITLE: entry.title.clone(),
             AUTHOR: entry.author.clone(),
-            NUM_PAGES: entry.num_pages as i32,
             ADDED_AT: Utc::now(),
             TAGS: entry.tags.clone(),
         };
@@ -79,7 +78,7 @@ impl DB {
         Ok(())
     }
 
-    pub async fn delete_book(&self, id: &str) -> Result<()> {
+    pub async fn delete_quiz(&self, id: &str) -> Result<()> {
         let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
         let filter = doc! {
             "_id": oid,
@@ -96,19 +95,26 @@ impl DB {
         self.client.database(DB_NAME).collection(COLL)
     }
 
-    fn doc_to_book(&self, doc: &Document) -> Result<Book> {
+    fn doc_to_quiz(&self, doc: &Document) -> Result<Quiz> {
         let id = doc.get_object_id(ID)?;
-        let name = doc.get_str(NAME)?;
+        let title = doc.get_str(TITLE)?;
         let author = doc.get_str(AUTHOR)?;
-        let num_pages = doc.get_i32(NUM_PAGES)?;
+        let questions = doc.get_array(QUESTIONS)?;
         let added_at = doc.get_datetime(ADDED_AT)?;
         let tags = doc.get_array(TAGS)?;
 
-        let book = Book {
+        let quiz = Quiz {
             id: id.to_hex(),
-            name: name.to_owned(),
+            title: title.to_owned(),
             author: author.to_owned(),
-            num_pages: num_pages as usize,
+            questions: questions
+                .iter()
+                .map(|entry| 
+                    entry.as_document()
+                        .and_then(|doc| self.doc_to_question(doc).ok())
+                        .expect("Could not fetch Question object from database")
+                )
+                .collect(),
             added_at: *added_at,
             tags: tags
                 .iter()
@@ -118,6 +124,25 @@ impl DB {
                 })
                 .collect(),
         };
-        Ok(book)
+        Ok(quiz)
     }
+    fn doc_to_question(&self, doc: &Document) -> Result<Question> {
+        let question = doc.get_str("question")?;
+        let correct_answer = doc.get_str("correct_answer")?;
+        let incorrect_answers = doc.get_array("incorrect_answers")?;
+
+        let question = Question {
+            question: question.to_owned(),
+            correct_answer: correct_answer.to_owned(),
+            incorrect_answers: incorrect_answers
+                .iter()
+                .filter_map(|entry| match entry {
+                    Bson::String(v) => Some(v.to_owned()),
+                    _ => None,
+                })
+                .collect(),
+        };
+        Ok(question)
+    }
+
 }

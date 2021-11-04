@@ -9,10 +9,10 @@ test:
 	@cargo test $(TESTS) --offline -- --color=always --test-threads=1 --nocapture
 
 mongostart:
-	@sudo docker run -d -p 27017:27017 -v `pwd`/data/db:/data/db --name bookydb mongo
+	@sudo docker run -d -p 27017:27017 -v `pwd`/data/db:/data/db --name quizzbuzz mongo
 
 mongostop:
-	@sudo docker stop bookydb && sudo docker rm bookydb
+	@sudo docker stop quizzbuzz && sudo docker rm quizzbuzz
 
 docs: build
 	@cargo doc --no-deps
