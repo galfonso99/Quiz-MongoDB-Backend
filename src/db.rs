@@ -29,28 +29,25 @@ impl DB {
         })
     }
 
-    pub async fn fetch_quizzes(&self) -> Result<Vec<Quiz>> {
-        let mut cursor = self
+    pub async fn fetch_quiz(&self, id: &str) -> Result<Quiz> {
+        let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
+        let query = doc! {
+            "_id": oid,
+        };
+        let quiz_document = self
             .get_collection()
-            .find(None, None)
+            .find_one(query, None)
             .await
-            .map_err(MongoQueryError)?;
-
-        let mut result: Vec<Quiz> = Vec::new();
-        while let Some(doc) = cursor.next().await {
-            result.push(self.doc_to_quiz(&doc?)?);
-        }
-        Ok(result)
+            .map_err(MongoQueryError)?
+            .expect("Could not fetch the given Quiz");
+        let quiz = self
+            .doc_to_quiz(&quiz_document)
+            .expect("Could not fetch the given Quiz");
+        Ok(quiz)
     }
 
     pub async fn create_quiz(&self, entry: &QuizRequest) -> Result<()> {
-        let doc = doc! {
-            TITLE: entry.title.clone(),
-            AUTHOR: entry.author.clone(),
-            QUESTIONS: entry.questions.clone(),
-            ADDED_AT: Utc::now(),
-            TAGS: entry.tags.clone(),
-        };
+        let doc = self.quiz_to_doc(entry);
 
         self.get_collection()
             .insert_one(doc, None)
@@ -61,18 +58,11 @@ impl DB {
 
     pub async fn edit_quiz(&self, id: &str, entry: &QuizRequest) -> Result<()> {
         let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
-        let query = doc! {
-            "_id": oid,
-        };
-        let doc = doc! {
-            TITLE: entry.title.clone(),
-            AUTHOR: entry.author.clone(),
-            ADDED_AT: Utc::now(),
-            TAGS: entry.tags.clone(),
-        };
+        let query = doc! { "_id": oid,};
+        let quiz_doc = self.quiz_to_doc(entry);
 
         self.get_collection()
-            .update_one(query, doc, None)
+            .update_one(query, quiz_doc, None)
             .await
             .map_err(MongoQueryError)?;
         Ok(())
@@ -89,6 +79,20 @@ impl DB {
             .await
             .map_err(MongoQueryError)?;
         Ok(())
+    }
+
+    pub async fn fetch_quizzes(&self) -> Result<Vec<Quiz>> {
+        let mut cursor = self
+            .get_collection()
+            .find(None, None)
+            .await
+            .map_err(MongoQueryError)?;
+
+        let mut result: Vec<Quiz> = Vec::new();
+        while let Some(doc) = cursor.next().await {
+            result.push(self.doc_to_quiz(&doc?)?);
+        }
+        Ok(result)
     }
 
     fn get_collection(&self) -> Collection {
@@ -109,11 +113,12 @@ impl DB {
             author: author.to_owned(),
             questions: questions
                 .iter()
-                .map(|entry| 
-                    entry.as_document()
+                .map(|entry| {
+                    entry
+                        .as_document()
                         .and_then(|doc| self.doc_to_question(doc).ok())
                         .expect("Could not fetch Question object from database")
-                )
+                })
                 .collect(),
             added_at: *added_at,
             tags: tags
@@ -145,4 +150,14 @@ impl DB {
         Ok(question)
     }
 
+    fn quiz_to_doc(&self, quiz: &QuizRequest) -> Document {
+        doc! {
+            TITLE: quiz.title.clone(),
+            AUTHOR: quiz.author.clone(),
+            QUESTIONS: quiz.questions.clone(),
+            ADDED_AT: Utc::now(),
+            TAGS: quiz.tags.clone(),
+
+        }
+    }
 }

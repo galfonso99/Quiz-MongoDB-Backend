@@ -49,6 +49,7 @@ pub struct Question {
     }
   }
 
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let db = DB::init().await?;
@@ -60,6 +61,11 @@ async fn main() -> Result<()> {
         .and(warp::body::json())
         .and(with_db(db.clone()))
         .and_then(handler::create_quiz_handler)
+        .or(quiz
+            .and(warp::get())
+            .and(warp::path::param())
+            .and(with_db(db.clone()))
+            .and_then(handler::fetch_quiz_handler))
         .or(quiz
             .and(warp::put())
             .and(warp::path::param())
