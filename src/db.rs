@@ -1,8 +1,10 @@
-use crate::{error::Error::*, handler::QuizRequest, Question, Quiz, Result};
+use crate::{error::Error::*, handler::QuizRequest, Result};
+use crate::structs::{Question, Quiz};
 use chrono::prelude::*;
 use futures::StreamExt;
 pub use mongodb::bson::{doc, document::Document, oid::ObjectId, Bson};
-use mongodb::{options::ClientOptions, Client, Collection};
+use mongodb::{Client, Collection, };
+use mongodb::options::{ClientOptions, FindOptions};
 
 const DB_NAME: &str = "quizzbuzz";
 const COLL: &str = "quizzes";
@@ -40,26 +42,45 @@ impl DB {
             .await
             .map_err(MongoQueryError)?
             .expect("Could not fetch the given Quiz");
-        let quiz = self
-            .doc_to_quiz(&quiz_document)
-            .expect("Could not fetch the given Quiz");
+        let quiz: Quiz = quiz_document.into();
         Ok(quiz)
     }
 
-    pub async fn create_quiz(&self, entry: &QuizRequest) -> Result<()> {
-        let doc = self.quiz_to_doc(entry);
-
-        self.get_collection()
-            .insert_one(doc, None)
+    //Request made to test the query characteristics of the database
+    pub async fn search_quizzes(&self, title: &str) -> Result<Vec<Quiz>> {
+        let query = doc! {
+            "title": {"$regex" : format!("{}", title), "$options": "i"},
+        };
+        let mut cursor = self
+            .get_collection()
+            .find(query, None)
             .await
             .map_err(MongoQueryError)?;
-        Ok(())
+
+        let mut result: Vec<Quiz> = Vec::new();
+        while let Some(doc) = cursor.next().await {
+            let quiz: Quiz = doc.map_err(MongoQueryError)?.into();
+            result.push(quiz);
+        }
+        Ok(result)
     }
 
-    pub async fn edit_quiz(&self, id: &str, entry: &QuizRequest) -> Result<()> {
+    pub async fn create_quiz(&self, entry: QuizRequest) -> Result<String> {
+        let quiz_doc: Document = entry.into();
+
+        let result = self
+            .get_collection()
+            .insert_one(quiz_doc, None)
+            .await
+            .map_err(MongoQueryError)?;
+        let inserted_id = result.inserted_id.to_string();
+        Ok(inserted_id)
+    }
+
+    pub async fn edit_quiz(&self, id: &str, entry: QuizRequest) -> Result<()> {
         let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
         let query = doc! { "_id": oid,};
-        let quiz_doc = self.quiz_to_doc(entry);
+        let quiz_doc: Document = entry.into();
 
         self.get_collection()
             .update_one(query, quiz_doc, None)
@@ -90,74 +111,49 @@ impl DB {
 
         let mut result: Vec<Quiz> = Vec::new();
         while let Some(doc) = cursor.next().await {
-            result.push(self.doc_to_quiz(&doc?)?);
+            let quiz: Quiz = doc.map_err(MongoQueryError)?.into();
+            result.push(quiz);
         }
         Ok(result)
+    }
+
+    pub async fn fetch_recent_quizzes(&self) -> Result<Vec<Quiz>> {
+        let options = FindOptions::builder()
+            .limit(8)
+            .sort(doc! {
+                "added_at": -1,
+            })
+            .build();
+        let mut cursor = self
+            .get_collection()
+            .find(None, options)
+            .await
+            .map_err(MongoQueryError)?;
+
+        let mut result: Vec<Quiz> = Vec::new();
+        while let Some(doc) = cursor.next().await {
+            let quiz: Quiz = doc.map_err(MongoQueryError)?.into();
+            result.push(quiz);
+        }
+        Ok(result)
+    }
+
+    pub async fn delete_quizzes(&self) -> Result<()> {
+        let delete_result = self
+            .get_collection()
+            .delete_many(
+                doc! {
+                   "tags": ["funner"]
+                },
+                None
+            ).await?;
+
+        println!("Deleted {} documents", delete_result.deleted_count);
+        Ok(())
     }
 
     fn get_collection(&self) -> Collection {
         self.client.database(DB_NAME).collection(COLL)
     }
 
-    fn doc_to_quiz(&self, doc: &Document) -> Result<Quiz> {
-        let id = doc.get_object_id(ID)?;
-        let title = doc.get_str(TITLE)?;
-        let author = doc.get_str(AUTHOR)?;
-        let questions = doc.get_array(QUESTIONS)?;
-        let added_at = doc.get_datetime(ADDED_AT)?;
-        let tags = doc.get_array(TAGS)?;
-
-        let quiz = Quiz {
-            id: id.to_hex(),
-            title: title.to_owned(),
-            author: author.to_owned(),
-            questions: questions
-                .iter()
-                .map(|entry| {
-                    entry
-                        .as_document()
-                        .and_then(|doc| self.doc_to_question(doc).ok())
-                        .expect("Could not fetch Question object from database")
-                })
-                .collect(),
-            added_at: *added_at,
-            tags: tags
-                .iter()
-                .filter_map(|entry| match entry {
-                    Bson::String(v) => Some(v.to_owned()),
-                    _ => None,
-                })
-                .collect(),
-        };
-        Ok(quiz)
-    }
-    fn doc_to_question(&self, doc: &Document) -> Result<Question> {
-        let question = doc.get_str("question")?;
-        let correct_answer = doc.get_str("correct_answer")?;
-        let incorrect_answers = doc.get_array("incorrect_answers")?;
-
-        let question = Question {
-            question: question.to_owned(),
-            correct_answer: correct_answer.to_owned(),
-            incorrect_answers: incorrect_answers
-                .iter()
-                .filter_map(|entry| match entry {
-                    Bson::String(v) => Some(v.to_owned()),
-                    _ => None,
-                })
-                .collect(),
-        };
-        Ok(question)
-    }
-
-    fn quiz_to_doc(&self, quiz: &QuizRequest) -> Document {
-        doc! {
-            TITLE: quiz.title.clone(),
-            AUTHOR: quiz.author.clone(),
-            QUESTIONS: quiz.questions.clone(),
-            ADDED_AT: Utc::now(),
-            TAGS: quiz.tags.clone(),
-
-        }
-    }
 }

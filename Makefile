@@ -29,4 +29,7 @@ lint:
 dev:
 	@cargo run
 
+restart:
+	@cargo run -- --restart
+
 .PHONY: build test docs style-check lint
