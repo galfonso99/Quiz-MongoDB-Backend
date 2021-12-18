@@ -3,6 +3,7 @@ use db::{DB};
 // use mongodb::bson::Bson;
 use std::convert::Infallible;
 use warp::{Filter, Rejection};
+use std::net::*;
 
 type Result<T> = std::result::Result<T, error::Error>;
 type WebResult<T> = std::result::Result<T, Rejection>;
@@ -15,6 +16,8 @@ mod structs;
 #[tokio::main]
 async fn main() -> Result<()> {
     let db = DB::init().await?;
+    let port: u16 = std::env::var("PORT")
+    .unwrap_or_else(|_| "3000".to_string()).parse().unwrap(); //default port
     let quiz = warp::path("quiz");
     let path = warp::path::param();
     let json = warp::body::json();
@@ -91,7 +94,7 @@ async fn main() -> Result<()> {
 
     let routes = quiz_routes.with(cors).recover(error::handle_rejection);
 
-    warp::serve(routes).run(([73, 46, 203, 251], 22259)).await;
+    warp::serve(routes).run(([0, 0, 0, 0], port)).await;
     Ok(())
 }
 
