@@ -30,6 +30,7 @@ async fn main() -> Result<()> {
             "Origin",
             "Access-Control-Request-Method",
             "Access-Control-Request-Headers",
+            "Access-Control-Allow-Origin",
             "Content-Type",
         ])
         .allow_methods(vec!["POST", "GET"]);
