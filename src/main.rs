@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
     let routes = quiz_routes.with(cors).recover(error::handle_rejection);
 
     println!("Started on port 8080");
-    warp::serve(routes).run(([0, 0, 0, 0], 8080)).await;
+    warp::serve(routes).run(([73, 46, 203, 251], 8080)).await;
     Ok(())
 }
 
