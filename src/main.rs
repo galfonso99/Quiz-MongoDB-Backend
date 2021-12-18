@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     let path = warp::path::param();
     let json = warp::body::json();
     let cors = warp::cors()
-        .allow_origin("*")
+        .allow_any_origin()
         .allow_headers(vec![
             "User-Agent",
             "Sec-Fetch-Mode",
