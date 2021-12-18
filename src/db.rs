@@ -3,9 +3,9 @@ use crate::structs::{ Quiz};
 // use chrono::prelude::*;
 use futures::StreamExt;
 pub use mongodb::bson::{doc, document::Document, oid::ObjectId, Bson};
-use mongodb::{Client, Collection, IndexModel};
+use mongodb::{Client, Collection};
 use mongodb::options::{ClientOptions, FindOptions};
-use urlencoding::decode;
+use urlencoding;
 
 const DB_NAME: &str = "quizzbuzz";
 const COLL: &str = "quizzes";
@@ -42,12 +42,6 @@ impl DB {
 
     //Request made to test the query characteristics of the database
     pub async fn search_quizzes(&self, title: &str) -> Result<Vec<Quiz>> {
-        // let index_model = IndexModel::builder()
-        //     .keys(doc! {
-        //         "title": "text"
-        //     })
-        //     .build();
-        // self.get_collection().create_index(index_model, None).await?;
 
         let query = doc! { "$text": { "$search": format!("{}", urlencoding::decode(title).unwrap()) } };
 
