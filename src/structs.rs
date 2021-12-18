@@ -57,7 +57,7 @@ impl From<Document> for Quiz {
             title: doc.get_str("title").unwrap().to_string(),
             author: doc.get_str("author").unwrap().to_string(),
             questions: doc.get_array("questions").unwrap().to_vec().iter().map(|x| x.clone().into()).collect(),
-            added_at: doc.get_datetime("added_at").unwrap().to_owned(),
+            added_at: doc.get_datetime("added_at").unwrap().to_owned().to_chrono(),
             tags: doc.get_array("tags").unwrap().to_vec().iter().map(|x| x.to_string()).collect(),
         }
     }

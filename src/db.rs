@@ -1,20 +1,14 @@
 use crate::{error::Error::*, handler::QuizRequest, Result};
-use crate::structs::{Question, Quiz};
-use chrono::prelude::*;
+use crate::structs::{ Quiz};
+// use chrono::prelude::*;
 use futures::StreamExt;
 pub use mongodb::bson::{doc, document::Document, oid::ObjectId, Bson};
-use mongodb::{Client, Collection, };
+use mongodb::{Client, Collection, IndexModel};
 use mongodb::options::{ClientOptions, FindOptions};
+use urlencoding::decode;
 
 const DB_NAME: &str = "quizzbuzz";
 const COLL: &str = "quizzes";
-
-const ID: &str = "_id";
-const TITLE: &str = "title";
-const AUTHOR: &str = "author";
-const QUESTIONS: &str = "questions";
-const ADDED_AT: &str = "added_at";
-const TAGS: &str = "tags";
 
 #[derive(Clone, Debug)]
 pub struct DB {
@@ -30,9 +24,9 @@ impl DB {
             client: Client::with_options(client_options)?,
         })
     }
-
+    
     pub async fn fetch_quiz(&self, id: &str) -> Result<Quiz> {
-        let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
+        let oid = ObjectId::parse_str(id).map_err(|_| InvalidIDError(id.to_owned()))?;
         let query = doc! {
             "_id": oid,
         };
@@ -48,12 +42,25 @@ impl DB {
 
     //Request made to test the query characteristics of the database
     pub async fn search_quizzes(&self, title: &str) -> Result<Vec<Quiz>> {
-        let query = doc! {
-            "title": {"$regex" : format!("{}", title), "$options": "i"},
-        };
+        // let index_model = IndexModel::builder()
+        //     .keys(doc! {
+        //         "title": "text"
+        //     })
+        //     .build();
+        // self.get_collection().create_index(index_model, None).await?;
+
+        let query = doc! { "$text": { "$search": format!("{}", urlencoding::decode(title).unwrap()) } };
+
+        let options = FindOptions::builder()
+            .projection(doc! {
+                "score": { "$meta": "textScore" }
+            })
+            .sort(doc! { "score": { "$meta": "textScore" } })
+            .build();
+
         let mut cursor = self
             .get_collection()
-            .find(query, None)
+            .find(query, options)
             .await
             .map_err(MongoQueryError)?;
 
@@ -78,7 +85,7 @@ impl DB {
     }
 
     pub async fn edit_quiz(&self, id: &str, entry: QuizRequest) -> Result<()> {
-        let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
+        let oid = ObjectId::parse_str(id).map_err(|_| InvalidIDError(id.to_owned()))?;
         let query = doc! { "_id": oid,};
         let quiz_doc: Document = entry.into();
 
@@ -90,7 +97,7 @@ impl DB {
     }
 
     pub async fn delete_quiz(&self, id: &str) -> Result<()> {
-        let oid = ObjectId::with_string(id).map_err(|_| InvalidIDError(id.to_owned()))?;
+        let oid = ObjectId::parse_str(id).map_err(|_| InvalidIDError(id.to_owned()))?;
         let filter = doc! {
             "_id": oid,
         };
@@ -152,7 +159,7 @@ impl DB {
         Ok(())
     }
 
-    fn get_collection(&self) -> Collection {
+    fn get_collection(&self) -> Collection<Document>  {
         self.client.database(DB_NAME).collection(COLL)
     }
 
