@@ -6,9 +6,10 @@ pub use mongodb::bson::{doc, document::Document, oid::ObjectId, Bson};
 use mongodb::{Client, Collection};
 use mongodb::options::{ClientOptions, FindOptions};
 use urlencoding;
+use std::env;
 
 const DB_NAME: &str = "quizzbuzz";
-const COLL: &str = "quizzes";
+const COLL: &str = "quiz";
 
 #[derive(Clone, Debug)]
 pub struct DB {
@@ -17,7 +18,10 @@ pub struct DB {
 
 impl DB {
     pub async fn init() -> Result<Self> {
-        let mut client_options = ClientOptions::parse("mongodb://127.0.0.1:27017").await?;
+        let mongo_uri_domain = env::var("MONGODB_URI").expect("MONGODB_URI must be set");
+        let mongo_uri_options = "?retryWrites=true&w=majority".to_string();
+        let mongodb_uri = format!("{}{}", mongo_uri_domain, mongo_uri_options);
+        let mut client_options = ClientOptions::parse( mongodb_uri ).await?;
         client_options.app_name = Some("quizzbuzz".to_string());
 
         Ok(Self {
@@ -42,8 +46,8 @@ impl DB {
 
     //Request made to test the query characteristics of the database
     pub async fn search_quizzes(&self, title: &str) -> Result<Vec<Quiz>> {
-
-        let query = doc! { "$text": { "$search": format!("{}", urlencoding::decode(title).unwrap()) } };
+        let decoded_title = urlencoding::decode(title).unwrap();
+        let query = doc! { "$text": { "$search": decoded_title.to_string() } };
 
         let options = FindOptions::builder()
             .projection(doc! {
