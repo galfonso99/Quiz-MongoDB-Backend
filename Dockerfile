@@ -44,4 +44,4 @@ COPY --from=builder /backend/target/x86_64-unknown-linux-musl/release/rust-mongo
 # Use an unprivileged user.
 USER backend:backend
 
-CMD ["/backend/backend"]
+CMD ["/backend/rust-mongodb-backend"]
